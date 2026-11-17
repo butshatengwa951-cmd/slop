@@ -2,17 +2,24 @@
 
 This folder is the hardcoded-data version for local development. **Only Firebase authentication, authentication error handling, and admin route protection are implemented at this stage.** The sample staff and clock-event records are fixtures only; they are not processed or returned by the API yet.
 
+## Local configuration
+
+The example environment uses:
+- `PORT=5000`
+- `FRONTEND_URL=http://localhost:5173`
+
+Copy `.env.example` to `.env`. Express CORS permits requests from the configured frontend origin and allows the Authorization header used for Firebase ID tokens.
+
 ## Setup
 
 Requirements: Node.js 22 or later and a Firebase project with Authentication enabled.
 
 1. Run `npm install`.
-2. Copy `.env.example` to `.env`.
-3. Set `FIREBASE_PROJECT_ID` and `GOOGLE_APPLICATION_CREDENTIALS`.
-4. Keep the service-account JSON outside Git and never place Firebase Admin credentials in React.
-5. Run `npm test`, then `npm start`.
+2. Configure `FIREBASE_PROJECT_ID` and `GOOGLE_APPLICATION_CREDENTIALS` in `.env`.
+3. Keep the service-account JSON outside Git and never place Firebase Admin credentials in React.
+4. Run `npm test`, then `npm start`.
 
-The server defaults to port 5001, so it can run beside the Firebase + Sheets version on port 5000.
+Both backend variants use port 5000 because they are alternatives. Run only one at a time.
 
 ## Authentication behaviour
 

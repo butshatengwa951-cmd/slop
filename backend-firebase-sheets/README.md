@@ -2,6 +2,14 @@
 
 This folder is the Firebase-first version. **Only Firebase authentication, authentication error handling, and admin route protection are implemented at this stage.** Google Sheets settings and a placeholder module are included for a later integration; no spreadsheet is read yet.
 
+## Local configuration
+
+The example environment uses:
+- `PORT=5000`
+- `FRONTEND_URL=http://localhost:5173`
+
+Copy `.env.example` to `.env` and keep the values appropriate for your local React dev server. Express CORS permits requests from the configured frontend origin and allows the Authorization header used for Firebase ID tokens.
+
 ## Setup
 
 Requirements: Node.js 22 or later and a Firebase project with Authentication enabled.
@@ -11,8 +19,6 @@ Requirements: Node.js 22 or later and a Firebase project with Authentication ena
 3. Set `FIREBASE_PROJECT_ID` and `GOOGLE_APPLICATION_CREDENTIALS`.
 4. Keep the service-account JSON outside Git and never place Firebase Admin credentials in React.
 5. Run `npm test`, then `npm start`.
-
-The server defaults to port 5000.
 
 ## Authentication behaviour
 
