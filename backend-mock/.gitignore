@@ -1,8 +1,15 @@
+# Installed packages are restored with npm install.
 node_modules/
+
+# Local configuration may contain project identifiers or secret paths.
 .env
 .env.*
 !.env.example
+
+# Never commit Firebase service-account private keys.
 serviceAccount*.json
 *service-account*.json
+
+# Local test output and operating-system metadata.
 coverage/
 .DS_Store

@@ -1,56 +1,56 @@
-# Mock-data backend (authentication scope)
+# Mock-data backend (authentication first)
 
-This folder is the hardcoded-data version for local development. **Only Firebase authentication, authentication error handling, and admin route protection are implemented at this stage.** The sample staff and clock-event records are fixtures only; they are not processed or returned by the API yet.
+This version is intended for early local development. It shares the same Firebase authentication and admin protection as the Firebase + Sheets version. Sample staff and clock-event records are stored as fixtures, but they are not read or processed by the live endpoint yet.
 
-## Local configuration
+## Configure and run
 
-The example environment uses:
-- `PORT=5000`
-- `FRONTEND_URL=http://localhost:5173`
+The example environment file uses:
 
-Copy `.env.example` to `.env`. Express CORS permits requests from the configured frontend origin and allows the Authorization header used for Firebase ID tokens.
+```env
+PORT=5000
+FRONTEND_URL=http://localhost:5173
+```
 
-## Setup
+1. Install dependencies with `npm install`.
+2. Copy `.env.example` to `.env`.
+3. Set `FIREBASE_PROJECT_ID` and `GOOGLE_APPLICATION_CREDENTIALS`.
+4. Keep Firebase service-account credentials outside this repository.
+5. Run `npm test`.
+6. Run `npm start`.
 
-Requirements: Node.js 22 or later and a Firebase project with Authentication enabled.
+Use Node.js 22 or later. Start only one backend variant at a time because both use port 5000.
 
-1. Run `npm install`.
-2. Configure `FIREBASE_PROJECT_ID` and `GOOGLE_APPLICATION_CREDENTIALS` in `.env`.
-3. Keep the service-account JSON outside Git and never place Firebase Admin credentials in React.
-4. Run `npm test`, then `npm start`.
+## How the code works
 
-Both backend variants use port 5000 because they are alternatives. Run only one at a time.
+The authentication files are intentionally equivalent to the Firebase + Sheets backend:
 
-## Authentication behaviour
+- `src/config/firebaseAdmin.js` initialises Firebase Admin once and exports a reusable Auth client.
+- `src/middleware/authenticateFirebase.js` validates the Bearer header, verifies the token (including revocation), adds verified identity information to `req.user`, and maps failures to safe 401/503 responses.
+- `src/middleware/firebaseAuthMiddleware.js` connects the reusable middleware to the real Firebase Admin verifier.
+- `src/middleware/requireAdmin.js` allows only a verified token carrying the custom claim `admin: true`.
 
-Every protected request must send:
+The Express setup in `src/app.js` permits only the configured `FRONTEND_URL` origin and the Authorization header. `src/server.js` loads `.env` and listens on port 5000.
 
-`Authorization: Bearer <Firebase ID token>`
+### Hardcoded fixtures — `src/data/mockAttendance.js`
 
-The backend verifies the Firebase ID token and checks revocation. A verified token must contain the custom claim `admin: true`.
+Contains example staff records and clock events. It is intentionally not imported by the attendance route yet. Later, this data can be connected to a repository/service and used to implement attendance business logic.
 
-- 401 `AUTH_TOKEN_REQUIRED`: no Authorization header.
-- 401 `AUTH_TOKEN_INVALID_FORMAT`: header is not a Bearer token.
-- 401 `AUTH_TOKEN_INVALID`: Firebase rejects the token (including expired or revoked tokens).
-- 403 `ADMIN_REQUIRED`: token is valid but the user is not an administrator.
-- 503 `AUTH_SERVICE_UNAVAILABLE`: Firebase verification cannot currently complete.
+### Google Sheets placeholder — `src/integrations/googleSheets.placeholder.js`
 
-Error responses contain a stable code and a safe message. Firebase's raw error message is not returned to the client.
+Provides a named location for spreadsheet configuration. It does not connect to Google or read data. This lets us add the real integration in a later task without mixing it into authentication.
 
-Custom claims must be assigned from a trusted administrative environment. Do not let the frontend assign its own role. After a claim changes, the client must refresh its Firebase ID token.
+### Protected route — `src/routes/attendance.routes.js`
 
-## Current route status
+Runs the Firebase authentication middleware and admin check before returning `501 ATTENDANCE_NOT_IMPLEMENTED`. The endpoint is a placeholder; no sample data is returned yet.
 
-`GET /api/attendance/live` is protected by both authentication and admin middleware. After a valid admin token it returns HTTP 501 (`ATTENDANCE_NOT_IMPLEMENTED`). This is intentional: the endpoint and attendance processing are for a later task.
+### Authentication tests — `tests/authentication.test.js`
 
-## Hardcoded sample records
+Uses Node's built-in test runner and injected fake verification to test authentication failures and admin access without requiring Firebase credentials or network calls.
 
-The unconnected fixtures are in `src/data/mockAttendance.js`. They provide a place to prepare sample staff and clock-event records without implementing latest-event calculations or a live response yet.
+## Why both backends use the same port
 
-## Google Sheets preparation only
+These are alternatives, not two services meant to run simultaneously. Both use `PORT=5000`, allowing the React frontend to use one API base URL whichever backend variant is active. Stop one server before starting the other.
 
-`src/integrations/googleSheets.placeholder.js` is the reserved location for the future integration. The `googleapis` dependency and spreadsheet environment variables are present, but there is no API client, spreadsheet read, or attendance mapping yet.
+## Future work boundary
 
-## Tests
-
-Run `npm test`. The tests are limited to Firebase authentication error handling and admin authorisation.
+The hardcoded fixture data and Google Sheets settings are preparation only. Latest-event calculation, staff filtering, live attendance response, total-IN calculation and real Sheets API calls are not implemented yet.
