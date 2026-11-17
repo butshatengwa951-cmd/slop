@@ -25,7 +25,7 @@ export function createAuthenticateFirebase({ verifyIdToken, logger = console }) 
       );
     }
 
-    const match = /^Bearer\\s+(\\S+)$/i.exec(authorization);
+    const match = /^Bearer\s+(\S+)$/i.exec(authorization);
     if (!match) {
       return sendAuthError(
         res, 401, "AUTH_TOKEN_INVALID_FORMAT", "Use the Bearer authentication scheme."
