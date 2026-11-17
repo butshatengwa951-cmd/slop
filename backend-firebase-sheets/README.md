@@ -1,70 +1,45 @@
-# Firebase + Google Sheets backend
+# Firebase + Google Sheets backend (authentication scope)
 
-Integration-ready Express backend for the attendance dashboard.
+This folder is the Firebase-first version. **Only Firebase authentication, authentication error handling, and admin route protection are implemented at this stage.** Google Sheets settings and a placeholder module are included for a later integration; no spreadsheet is read yet.
 
-## Requirements and setup
+## Setup
 
-- Node.js 22 or later
-- Firebase project with Authentication enabled
-- Google Cloud service identity with permission to verify Firebase ID tokens and read the spreadsheet
-- Google Sheets API enabled
+Requirements: Node.js 22 or later and a Firebase project with Authentication enabled.
 
-Run npm install, copy .env.example to .env, set FIREBASE_PROJECT_ID, GOOGLE_APPLICATION_CREDENTIALS and SHEETS_SPREADSHEET_ID, then run npm test and npm start. Share the spreadsheet with the service account as Viewer. Keep the service-account JSON outside source control; local environment files and common service-account filenames are ignored by Git.
+1. Run `npm install`.
+2. Copy `.env.example` to `.env`.
+3. Set `FIREBASE_PROJECT_ID` and `GOOGLE_APPLICATION_CREDENTIALS`.
+4. Keep the service-account JSON outside Git and never place Firebase Admin credentials in React.
+5. Run `npm test`, then `npm start`.
 
-## Google Sheets structure
+The server defaults to port 5000.
 
-Both tabs require a header row.
+## Authentication behaviour
 
-Staff tab, range Staff!A:C:
-- A: employeeId (stable unique identifier)
-- B: name
-- C: active (TRUE/FALSE)
+Every protected request must send:
 
-AttendanceEvents tab, range AttendanceEvents!A:C:
-- A: employeeId (matches Staff.employeeId)
-- B: event (exactly IN or OUT)
-- C: timestamp (Google Sheets date/time cell or ISO-8601 string)
+`Authorization: Bearer <Firebase ID token>`
 
-The backend reads both ranges in one batch request. The latest valid event per employee determines status. Inactive staff are excluded. Staff with no valid event are returned as OUT with lastClockEventTime null. Timestamps are returned as ISO-8601 strings. Configure different tab names/ranges using SHEETS_STAFF_RANGE and SHEETS_EVENTS_RANGE.
+The backend verifies the Firebase ID token and checks revocation. A verified token must contain the custom claim `admin: true`.
 
-## Authentication
+- 401 `AUTH_TOKEN_REQUIRED`: no Authorization header.
+- 401 `AUTH_TOKEN_INVALID_FORMAT`: header is not a Bearer token.
+- 401 `AUTH_TOKEN_INVALID`: Firebase rejects the token (including expired or revoked tokens).
+- 403 `ADMIN_REQUIRED`: token is valid but the user is not an administrator.
+- 503 `AUTH_SERVICE_UNAVAILABLE`: Firebase verification cannot currently complete.
 
-Every GET /api/attendance/live request must send Authorization: Bearer <Firebase ID token>. The server verifies the token and its revocation state. The verified Firebase custom claim admin: true is required. Missing, malformed, expired, invalid or revoked tokens receive 401. A valid non-admin receives 403. Firebase verification outages return a generic 503 without leaking internal details.
+Error responses contain a stable code and a safe message. Firebase's raw error message is not returned to the client.
 
-Assign an admin claim from a trusted backend environment after configuring credentials:
+Custom claims must be assigned from a trusted administrative environment. Do not let the frontend assign its own role. After a claim changes, the client must refresh its Firebase ID token.
 
-node scripts/set-admin.js FIREBASE_UID
+## Current route status
 
-Existing custom claims are preserved. After changing a claim, the client must refresh its ID token. Never assign admin claims from React or expose service credentials in the browser.
+`GET /api/attendance/live` is protected by both authentication and admin middleware. After a valid admin token it returns HTTP 501 (`ATTENDANCE_NOT_IMPLEMENTED`). This is intentional: attendance retrieval is outside the current task.
 
-## API contract
+## Google Sheets preparation only
 
-GET /api/attendance/live
+`src/integrations/googleSheets.placeholder.js` contains the future integration configuration location. The `googleapis` dependency and spreadsheet environment variables are present, but there is no API client, spreadsheet read, error handling, or attendance mapping yet.
 
-HTTP 200:
-{
-  "staff": [
-    {
-      "name": "Alex Morgan",
-      "status": "IN",
-      "lastClockEventTime": "2026-11-17T05:45:00.000Z"
-    }
-  ],
-  "totalIn": 1
-}
+## Tests
 
-Error bodies use { "error": { "code": "...", "message": "..." } }. Expected codes include AUTH_TOKEN_REQUIRED, AUTH_TOKEN_INVALID_FORMAT, AUTH_TOKEN_INVALID, ADMIN_REQUIRED, AUTH_SERVICE_UNAVAILABLE and ATTENDANCE_SOURCE_UNAVAILABLE.
-
-## Performance
-
-Both sheet tabs are requested in one batch and the Google API request timeout defaults to 1500 ms. This is a design target, not a measured guarantee; measure the two-second requirement using the deployed spreadsheet, hosting region and concurrent-admin load.
-
-## React
-
-Get the current Firebase user's ID token using getIdToken(), then include it in the Authorization header:
-
-fetch("http://localhost:5000/api/attendance/live", {
-  headers: { Authorization: "Bearer " + token }
-});
-
-Run npm test to execute the unit tests.
+Run `npm test`. The tests are limited to Firebase authentication error handling and admin authorisation.

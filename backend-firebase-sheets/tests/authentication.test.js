@@ -19,13 +19,14 @@ async function runMiddleware(middleware, req) {
   return { res, nextCalled };
 }
 
-test("missing token returns 401", async () => {
+test("missing authorization header returns 401", async () => {
   const middleware = createAuthenticateFirebase({
     verifyIdToken: async () => ({}), logger: { error() {} }
   });
   const result = await runMiddleware(middleware, { headers: {} });
   assert.equal(result.res.statusCode, 401);
   assert.equal(result.res.body.error.code, "AUTH_TOKEN_REQUIRED");
+  assert.equal(result.nextCalled, false);
 });
 
 test("malformed bearer header returns 401", async () => {
@@ -33,62 +34,66 @@ test("malformed bearer header returns 401", async () => {
     verifyIdToken: async () => ({}), logger: { error() {} }
   });
   const result = await runMiddleware(middleware, {
-    headers: { authorization: "Basic abc123" }
+    headers: { authorization: "Basic token" }
   });
   assert.equal(result.res.statusCode, 401);
   assert.equal(result.res.body.error.code, "AUTH_TOKEN_INVALID_FORMAT");
 });
 
-test("expired token returns a generic 401 response", async () => {
-  const middleware = createAuthenticateFirebase({
-    verifyIdToken: async () => {
-      const error = new Error("provider detail must not be exposed");
-      error.code = "auth/id-token-expired";
-      throw error;
-    },
-    logger: { error() {} }
-  });
-  const result = await runMiddleware(middleware, {
-    headers: { authorization: "Bearer expired-token" }
-  });
-  assert.equal(result.res.statusCode, 401);
-  assert.equal(result.res.body.error.code, "AUTH_TOKEN_INVALID");
-  assert.equal(JSON.stringify(result.res.body).includes("provider detail"), false);
+test("expired or revoked tokens return a safe 401", async () => {
+  for (const code of ["auth/id-token-expired", "auth/id-token-revoked"]) {
+    const middleware = createAuthenticateFirebase({
+      verifyIdToken: async () => {
+        const error = new Error("internal provider detail");
+        error.code = code;
+        throw error;
+      },
+      logger: { error() {} }
+    });
+    const result = await runMiddleware(middleware, {
+      headers: { authorization: "Bearer invalid-token" }
+    });
+    assert.equal(result.res.statusCode, 401);
+    assert.equal(result.res.body.error.code, "AUTH_TOKEN_INVALID");
+    assert.equal(JSON.stringify(result.res.body).includes("internal provider detail"), false);
+  }
 });
 
-test("Firebase verification outage returns a safe 503", async () => {
+test("Firebase verification outage returns a generic 503", async () => {
   const middleware = createAuthenticateFirebase({
     verifyIdToken: async () => {
-      const error = new Error("private upstream detail");
+      const error = new Error("private Firebase detail");
       error.code = "auth/internal-error";
       throw error;
     },
     logger: { error() {} }
   });
   const result = await runMiddleware(middleware, {
-    headers: { authorization: "Bearer some-token" }
+    headers: { authorization: "Bearer token" }
   });
   assert.equal(result.res.statusCode, 503);
   assert.equal(result.res.body.error.code, "AUTH_SERVICE_UNAVAILABLE");
-  assert.equal(JSON.stringify(result.res.body).includes("private upstream detail"), false);
+  assert.equal(JSON.stringify(result.res.body).includes("private Firebase detail"), false);
 });
 
-test("valid token is checked for revocation and adds trusted identity", async () => {
+test("valid token is verified with revocation checking and trusted claims", async () => {
   let checkedForRevocation = false;
   const middleware = createAuthenticateFirebase({
     verifyIdToken: async (token, checkRevoked) => {
       assert.equal(token, "valid-token");
       checkedForRevocation = checkRevoked;
-      return { uid: "firebase-user-123", email: "admin@example.com", admin: true };
+      return { uid: "admin-123", email: "admin@example.com", admin: true };
     },
     logger: { error() {} }
   });
+
   const req = { headers: { authorization: "Bearer valid-token" } };
   const result = await runMiddleware(middleware, req);
+
   assert.equal(result.nextCalled, true);
   assert.equal(checkedForRevocation, true);
   assert.deepEqual(req.user, {
-    uid: "firebase-user-123",
+    uid: "admin-123",
     email: "admin@example.com",
     isAdmin: true
   });
@@ -96,16 +101,22 @@ test("valid token is checked for revocation and adds trusted identity", async ()
 
 test("non-admin user receives 403", async () => {
   const result = await runMiddleware(requireAdmin, {
-    user: { uid: "staff-user", isAdmin: false }
+    user: { uid: "staff-123", isAdmin: false }
   });
   assert.equal(result.res.statusCode, 403);
   assert.equal(result.res.body.error.code, "ADMIN_REQUIRED");
   assert.equal(result.nextCalled, false);
 });
 
-test("admin user passes the role middleware", async () => {
+test("admin user passes admin middleware", async () => {
   const result = await runMiddleware(requireAdmin, {
-    user: { uid: "admin-user", isAdmin: true }
+    user: { uid: "admin-123", isAdmin: true }
   });
   assert.equal(result.nextCalled, true);
+});
+
+test("admin middleware rejects missing authenticated identity", async () => {
+  const result = await runMiddleware(requireAdmin, {});
+  assert.equal(result.res.statusCode, 401);
+  assert.equal(result.res.body.error.code, "AUTHENTICATION_REQUIRED");
 });

@@ -1,50 +1,49 @@
-# Mock-data backend
+# Mock-data backend (authentication scope)
 
-This local-development backend uses hardcoded staff and clock events while keeping the same response shape and Firebase authentication as the Firebase + Google Sheets backend.
+This folder is the hardcoded-data version for local development. **Only Firebase authentication, authentication error handling, and admin route protection are implemented at this stage.** The sample staff and clock-event records are fixtures only; they are not processed or returned by the API yet.
 
 ## Setup
 
 Requirements: Node.js 22 or later and a Firebase project with Authentication enabled.
 
-Run npm install, copy .env.example to .env, configure FIREBASE_PROJECT_ID and GOOGLE_APPLICATION_CREDENTIALS, then run npm test and npm start. This server defaults to port 5001 so it can run beside the Firebase + Sheets version on port 5000.
+1. Run `npm install`.
+2. Copy `.env.example` to `.env`.
+3. Set `FIREBASE_PROJECT_ID` and `GOOGLE_APPLICATION_CREDENTIALS`.
+4. Keep the service-account JSON outside Git and never place Firebase Admin credentials in React.
+5. Run `npm test`, then `npm start`.
 
-The mock server does not disable authentication. GET /api/attendance/live still requires a valid Firebase ID token and the admin: true custom claim. Assign a claim from a trusted backend terminal using:
+The server defaults to port 5001, so it can run beside the Firebase + Sheets version on port 5000.
 
-node scripts/set-admin.js FIREBASE_UID
+## Authentication behaviour
 
-Refresh the user's Firebase ID token after the claim is set. Never expose service-account credentials or admin-claim assignment in React.
+Every protected request must send:
 
-## Mock data and future integration
+`Authorization: Bearer <Firebase ID token>`
 
-Edit src/data/mockAttendanceRepository.js to change the hardcoded data. The route imports a repository function named getLiveAttendance() and does not know where the records come from.
+The backend verifies the Firebase ID token and checks revocation. A verified token must contain the custom claim `admin: true`.
 
-A Google Sheets adapter is also included at src/data/googleSheetsAttendanceRepository.js. After configuring and sharing the spreadsheet, switch the repository import in src/routes/attendance.routes.js from mockAttendanceRepository.js to googleSheetsAttendanceRepository.js. The route and authentication middleware do not need to change.
+- 401 `AUTH_TOKEN_REQUIRED`: no Authorization header.
+- 401 `AUTH_TOKEN_INVALID_FORMAT`: header is not a Bearer token.
+- 401 `AUTH_TOKEN_INVALID`: Firebase rejects the token (including expired or revoked tokens).
+- 403 `ADMIN_REQUIRED`: token is valid but the user is not an administrator.
+- 503 `AUTH_SERVICE_UNAVAILABLE`: Firebase verification cannot currently complete.
 
-The prepared Sheets adapter expects two tabs, both with a header row:
-- Staff: employeeId, name, active
-- AttendanceEvents: employeeId, event, timestamp
+Error responses contain a stable code and a safe message. Firebase's raw error message is not returned to the client.
 
-Valid events are IN or OUT. The latest event per employee determines current status. Deactivated staff are excluded. Staff with no valid event are returned as OUT with lastClockEventTime null.
+Custom claims must be assigned from a trusted administrative environment. Do not let the frontend assign its own role. After a claim changes, the client must refresh its Firebase ID token.
 
-## API contract
+## Current route status
 
-GET /api/attendance/live requires Authorization: Bearer <Firebase ID token>.
+`GET /api/attendance/live` is protected by both authentication and admin middleware. After a valid admin token it returns HTTP 501 (`ATTENDANCE_NOT_IMPLEMENTED`). This is intentional: the endpoint and attendance processing are for a later task.
 
-Success, HTTP 200:
-{
-  "staff": [
-    {
-      "name": "Alex Morgan",
-      "status": "IN",
-      "lastClockEventTime": "2026-11-17T05:45:00.000Z"
-    }
-  ],
-  "totalIn": 1
-}
+## Hardcoded sample records
 
-Authentication error responses use an error object with code and message:
-- 401: missing, malformed, invalid, expired or revoked token
-- 403: verified user does not have admin: true
-- 503: Firebase token verification service unavailable
+The unconnected fixtures are in `src/data/mockAttendance.js`. They provide a place to prepare sample staff and clock-event records without implementing latest-event calculations or a live response yet.
 
-Run npm test for unit tests.
+## Google Sheets preparation only
+
+`src/integrations/googleSheets.placeholder.js` is the reserved location for the future integration. The `googleapis` dependency and spreadsheet environment variables are present, but there is no API client, spreadsheet read, or attendance mapping yet.
+
+## Tests
+
+Run `npm test`. The tests are limited to Firebase authentication error handling and admin authorisation.
